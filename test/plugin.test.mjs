@@ -67,7 +67,8 @@ globalThis.kino = {
         status_code: 200,
         data: { stream_urls: [
           "https://cdn.example.test/movie/master.m3u8?token=abc",
-          { url: "https://cdn.example.test/movie/backup.mp4", server: "Backup node", headers: { "X-Playback-Key": "fixture-key" } },
+          { url: "https://cdn.example.test/nebula/master.m3u8?token=def", server: "Nebula", headers: { "X-Playback-Key": "fixture-key" } },
+          { url: "https://cdn.example.test/movie/backup.mp4", server: "Backup node" },
           "https://cdn.example.test/embed", // Must never reach ExoPlayer (HTML page, not media).
           "javascript:alert(1)"
         ] }
@@ -130,17 +131,22 @@ describe("CineJoy Kino Plugin Tests", () => {
   test("resolve() returns direct media URLs with required headers and alternatives", async () => {
     const stream = await plugin.resolve("movie:550");
     assert.equal(stream.url, "https://cdn.example.test/movie/master.m3u8?token=abc");
-    assert.equal(stream.mime, "application/x-mpegURL");
+    assert.equal(stream.mime, undefined, "HLS must omit mime; Kino detects it from the playlist URL/content");
+    assert.equal(Object.hasOwn(stream, "mime"), false);
     assert.equal(stream.headers.Referer, "https://brightpathsignals.com/");
     assert.equal(stream.headers.Origin, "https://brightpathsignals.com");
     assert.ok(stream.headers["User-Agent"]);
-    assert.equal(stream.alternatives.length, 1);
-    assert.equal(stream.alternatives[0].url, "https://cdn.example.test/movie/backup.mp4");
-    assert.equal(stream.alternatives[0].mime, "video/mp4");
-    assert.equal(stream.alternatives[0].label, "Backup node");
+    assert.equal(stream.alternatives.length, 2);
+    assert.equal(stream.alternatives[0].url, "https://cdn.example.test/nebula/master.m3u8?token=def");
+    assert.equal(stream.alternatives[0].mime, undefined, "HLS alternatives must also omit mime");
+    assert.equal(Object.hasOwn(stream.alternatives[0], "mime"), false);
+    assert.equal(stream.alternatives[0].label, "Nebula");
     assert.equal(stream.alternatives[0].headers["X-Playback-Key"], "fixture-key");
     assert.equal(stream.alternatives[0].headers.Referer, stream.headers.Referer);
     assert.equal(stream.alternatives[0].headers.Origin, stream.headers.Origin);
+    assert.equal(stream.alternatives[1].url, "https://cdn.example.test/movie/backup.mp4");
+    assert.equal(stream.alternatives[1].mime, "video/mp4");
+    assert.equal(stream.alternatives[1].label, "Backup node");
     assert.ok(!stream.url.includes("embed"), "HTML embed pages must not be handed to ExoPlayer");
     assert.ok(requestedUrls.some(url => url.hostname === "streamdata.vaplayer.ru" && url.searchParams.get("imdb") === "tt0137523"));
   });

@@ -211,13 +211,13 @@ async function resolve(arg, options = {}) {
     const declaredMime = String(item.mime || item.mime_type || item.content_type || "").toLowerCase();
     const path = parsed.pathname.toLowerCase();
     const isHls = path.endsWith(".m3u8") || declaredMime.includes("mpegurl") || declaredMime.includes("vnd.apple.mpegurl");
-    const isMp4 = path.endsWith(".mp4") || declaredMime.startsWith("video/mp4");
+    const isMp4 = !isHls && (path.endsWith(".mp4") || declaredMime.startsWith("video/mp4"));
     if (!isHls && !isMp4) return null;
     return {
       url,
-      // Media3 / ExoPlayer's canonical HLS MIME. The vendor alias is valid too, but the
-      // canonical value avoids older player builds treating an HLS URL as progressive media.
-      mime: isHls ? "application/x-mpegURL" : "video/mp4",
+      // Kino only accepts an explicit `mime` for video/mp4. For HLS, omit it so Kino
+      // identifies the playlist from its URL and content (per the Stream contract).
+      ...isMp4 ? { mime: "video/mp4" } : {},
       label: typeof item.label === "string" ? item.label : typeof item.server === "string" ? item.server : void 0,
       headers: item.headers && typeof item.headers === "object" && !Array.isArray(item.headers) ? item.headers : {}
     };
@@ -254,7 +254,7 @@ async function resolve(arg, options = {}) {
   }
   if (!streams.length) {
     throw typeof kino !== "undefined" && kino.error ? kino.error("unavailable", "Servidores de video no disponibles", {
-      userMessage: `Los servidores de streaming de CineJoy no tienen se\xF1al activa en este momento para "${mediaTitle}". Por favor intenta con otra pel\xEDcula o episodio.`
+      userMessage: "Los servidores de video no est\xE1n disponibles en este momento. Intenta m\xE1s tarde."
     }) : new Error("No hay servidores de video disponibles");
   }
   const streamHeaders = {
@@ -265,13 +265,13 @@ async function resolve(arg, options = {}) {
   const primary = streams[0];
   const alternatives = streams.slice(1, 9).map((stream, idx) => ({
     url: stream.url,
-    mime: stream.mime,
+    ...stream.mime ? { mime: stream.mime } : {},
     label: stream.label || `Servidor alternativo ${idx + 1}`,
     headers: { ...streamHeaders, ...stream.headers }
   }));
   return {
     url: primary.url,
-    mime: primary.mime,
+    ...primary.mime ? { mime: primary.mime } : {},
     label: primary.label || "Servidor principal",
     title: mediaTitle,
     headers: { ...streamHeaders, ...primary.headers },
