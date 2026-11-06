@@ -195,13 +195,38 @@ async function resolve(arg, options = {}) {
   } catch (e) {
   }
   const fetchFn = typeof kino !== "undefined" && kino.fetch ? kino.fetch : globalThis.fetch;
-  let streamUrls = [];
+  let streams = [];
+  const parseDirectStream = (entry) => {
+    const item = typeof entry === "string" ? { url: entry } : entry;
+    if (!item || typeof item !== "object") return null;
+    const url = item.url || item.stream_url || item.src || item.file || item.master_m3u8;
+    if (typeof url !== "string") return null;
+    let parsed;
+    try {
+      parsed = new URL(url);
+    } catch (e) {
+      return null;
+    }
+    if (parsed.protocol !== "https:" || !parsed.hostname) return null;
+    const declaredMime = String(item.mime || item.mime_type || item.content_type || "").toLowerCase();
+    const path = parsed.pathname.toLowerCase();
+    const isHls = path.endsWith(".m3u8") || declaredMime.includes("mpegurl") || declaredMime.includes("vnd.apple.mpegurl");
+    const isMp4 = path.endsWith(".mp4") || declaredMime.startsWith("video/mp4");
+    if (!isHls && !isMp4) return null;
+    return {
+      url,
+      mime: isHls ? "application/vnd.apple.mpegurl" : "video/mp4",
+      label: typeof item.label === "string" ? item.label : typeof item.server === "string" ? item.server : void 0
+    };
+  };
   if (imdbId) {
     try {
-      let apiEndpoint = `https://streamdata.vaplayer.ru/api.php?imdb=${imdbId}&type=${isMovie ? "movie" : "tv"}`;
+      const params = new URLSearchParams({ imdb: imdbId, type: isMovie ? "movie" : "tv" });
       if (!isMovie) {
-        apiEndpoint += `&season=${season}&episode=${episode}`;
+        params.set("season", season);
+        params.set("episode", episode);
       }
+      const apiEndpoint = `https://streamdata.vaplayer.ru/api.php?${params.toString()}`;
       const res = await fetchFn(apiEndpoint, {
         headers: {
           "Accept": "application/json",
@@ -210,14 +235,21 @@ async function resolve(arg, options = {}) {
       });
       if (res.ok) {
         const json = await res.json();
-        if (json?.status_code === "200" && Array.isArray(json?.data?.stream_urls)) {
-          streamUrls = json.data.stream_urls.filter((u) => typeof u === "string" && u.startsWith("http"));
+        const statusCode = String(json?.status_code ?? json?.status ?? "");
+        const entries = json?.data?.stream_urls ?? json?.stream_urls;
+        if ((statusCode === "200" || statusCode.toLowerCase() === "success") && Array.isArray(entries)) {
+          const seen = /* @__PURE__ */ new Set();
+          streams = entries.map(parseDirectStream).filter((stream) => {
+            if (!stream || seen.has(stream.url)) return false;
+            seen.add(stream.url);
+            return true;
+          }).slice(0, 9);
         }
       }
     } catch (e) {
     }
   }
-  if (!streamUrls.length) {
+  if (!streams.length) {
     throw typeof kino !== "undefined" && kino.error ? kino.error("unavailable", "Servidores de video no disponibles", {
       userMessage: `Los servidores de streaming de CineJoy no tienen se\xF1al activa en este momento para "${mediaTitle}". Por favor intenta con otra pel\xEDcula o episodio.`
     }) : new Error("No hay servidores de video disponibles");
@@ -227,20 +259,17 @@ async function resolve(arg, options = {}) {
     "Referer": "https://brightpathsignals.com/",
     "Origin": "https://brightpathsignals.com"
   };
-  const primaryStream = streamUrls[0];
-  const serverLabels = [
-    "Lisbon (4K / 1080p Ultra HD)",
-    "Nebula (1080p Directo)",
-    "Solara (R\xE1pido)",
-    "Athens (Reserva)"
-  ];
-  const alternatives = streamUrls.slice(1).map((url, idx) => ({
-    url,
-    label: serverLabels[idx] || `Servidor ${idx + 2}`,
+  const primary = streams[0];
+  const alternatives = streams.slice(1, 9).map((stream, idx) => ({
+    url: stream.url,
+    mime: stream.mime,
+    label: stream.label || `Servidor alternativo ${idx + 1}`,
     headers: streamHeaders
   }));
   return {
-    url: primaryStream,
+    url: primary.url,
+    mime: primary.mime,
+    label: primary.label || "Servidor principal",
     title: mediaTitle,
     headers: streamHeaders,
     alternatives,

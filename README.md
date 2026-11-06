@@ -9,11 +9,8 @@ Plugin nativo de streaming y catálogo para la aplicación [Kino](https://kinotv
 - **Películas y Series**: Catálogo completo sincronizado con TMDB, pósteres en alta resolución, sinopsis en español e información de actores y géneros.
 - **Pantalla Nativa (`apiVersion 19`)**: Interfaz construida con la capacidad declarativa `screen` de Kino, con soporte para control remoto D-pad en televisores y navegación táctil en celulares.
 - **Barra Compacta**: AppBar integrada con `mergeWithKinoBar: true` y `dense: true` con navegación limpia y salida directa.
-- **Streaming Multi-Servidor**:
-  - **Lisbon**: Enlaces 4K Ultra HD de alta velocidad.
-  - **Secret**: Servidor alternativo 4K / 1080p.
-  - **AutoEmbed & Smashy**: Servidores de respaldo con arranque instantáneo.
-- **Subtítulos**: Subtítulos automáticos en Español Latino e Inglés sincronizados en formato WebVTT.
+- **Streaming directo para el reproductor nativo**: `resolve()` consulta el resolvedor de CineJoy y acepta únicamente URLs HTTPS reconocidas como HLS (`.m3u8`) o MP4 directo. Las páginas HTML de embeds no se entregan al reproductor ExoPlayer. Las copias alternativas recibidas del resolvedor aparecen en el menú de servidores de Kino y usan las mismas cabeceras de origen.
+- **Cabeceras de CDN**: Referer, Origin y User-Agent se adjuntan a las solicitudes de reproducción.
 - **Guía de Episodios**: Desglose por temporadas y capítulos individuales con miniaturas y fechas de emisión.
 
 ## Requisitos de Compatibilidad
