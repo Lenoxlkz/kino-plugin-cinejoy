@@ -4,6 +4,7 @@ import * as plugin from "../plugin.js";
 
 const requestedUrls = [];
 const pluginLogs = [];
+let resolverHeadersFixture = null;
 const imdbByPath = {
   "/3/movie/550": "tt0137523",
   "/3/tv/1399": "tt0944947"
@@ -68,7 +69,7 @@ globalThis.kino = {
       return jsonResponse({
         status_code: 200,
         data: {
-          headers: { "X-Resolver-Session": "fixture-shared" },
+          ...(resolverHeadersFixture ? { headers: resolverHeadersFixture } : {}),
           stream_urls: [
             "https://cdn.example.test/movie/master.m3u8?token=abc",
             { url: "https://cdn.example.test/nebula/master.m3u8?token=def", server: "Nebula", headers: { "X-Playback-Key": "fixture-key" } },
@@ -140,26 +141,44 @@ describe("CineJoy Kino Plugin Tests", () => {
     assert.equal(Object.hasOwn(stream, "mime"), false);
     assert.equal(stream.headers.Referer, "https://brightpathsignals.com/");
     assert.equal(stream.headers.Origin, "https://brightpathsignals.com");
-    assert.equal(stream.headers["X-Resolver-Session"], "fixture-shared");
     assert.ok(stream.headers["User-Agent"]);
     assert.equal(stream.alternatives.length, 2);
     assert.equal(stream.alternatives[0].url, "https://cdn.example.test/nebula/master.m3u8?token=def");
     assert.equal(stream.alternatives[0].mime, undefined, "HLS alternatives must also omit mime");
     assert.equal(Object.hasOwn(stream.alternatives[0], "mime"), false);
-    assert.equal(stream.alternatives[0].label, "Nebula");
+    assert.equal(stream.alternatives[0].label, "Nebula · sin Origin");
     assert.equal(stream.alternatives[0].headers["X-Playback-Key"], "fixture-key");
-    assert.equal(stream.alternatives[0].headers["X-Resolver-Session"], "fixture-shared");
     assert.equal(stream.alternatives[0].headers.Referer, stream.headers.Referer);
-    assert.equal(stream.alternatives[0].headers.Origin, stream.headers.Origin);
+    assert.equal("Origin" in stream.alternatives[0].headers, false);
     assert.equal(stream.alternatives[1].url, "https://cdn.example.test/movie/backup.mp4");
     assert.equal(stream.alternatives[1].mime, "video/mp4");
-    assert.equal(stream.alternatives[1].label, "Backup node");
+    assert.equal(stream.alternatives[1].label, "Backup node · solo User-Agent");
+    assert.equal(stream.alternatives[1].headers["User-Agent"], stream.headers["User-Agent"]);
+    assert.equal("Origin" in stream.alternatives[1].headers, false);
+    assert.equal("Referer" in stream.alternatives[1].headers, false);
     assert.ok(!stream.url.includes("embed"), "HTML embed pages must not be handed to ExoPlayer");
     assert.ok(requestedUrls.some(url => url.hostname === "streamdata.vaplayer.ru" && url.searchParams.get("imdb") === "tt0137523"));
     const diag = pluginLogs.at(-1);
     assert.ok(diag.includes("hosts=cdn.example.test"));
-    assert.ok(diag.includes("X-Resolver-Session") && diag.includes("X-Playback-Key"));
-    assert.ok(!diag.includes("token=") && !diag.includes("fixture-shared"), "diagnostics must not log URLs or header values");
+    assert.ok(diag.includes("X-Playback-Key"));
+    assert.ok(diag.includes("alternatives=default,no-origin,user-agent-only"));
+    assert.ok(!diag.includes("token=") && !diag.includes("fixture-key"), "diagnostics must not log URLs or header values");
+  });
+
+  test("resolve() prefers resolver-supplied authentication headers over fallback variants", async () => {
+    const previousHeaders = resolverHeadersFixture;
+    resolverHeadersFixture = { Referer: "https://resolver.example/", Origin: "https://resolver.example" };
+    try {
+      const stream = await plugin.resolve("movie:550");
+      assert.equal(stream.headers.Referer, "https://resolver.example/");
+      assert.equal(stream.headers.Origin, "https://resolver.example");
+      assert.equal(stream.alternatives[0].headers.Referer, "https://resolver.example/");
+      assert.equal(stream.alternatives[0].headers.Origin, "https://resolver.example");
+      assert.equal(stream.alternatives[0].label, "Nebula");
+      assert.ok(pluginLogs.at(-1).includes("alternatives=resolver-auth-headers"));
+    } finally {
+      resolverHeadersFixture = previousHeaders;
+    }
   });
 
   test("resolve() requests the exact season and episode for a TV stream", async () => {

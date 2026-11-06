@@ -1,7 +1,7 @@
 {
   "id": "cinejoy",
   "name": "CineJoy",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "apiVersion": 19,
   "entry": "plugin.js",
   "description": "Películas y series en alta calidad de Cinejoy, con portada y estrenos",
