@@ -1,0 +1,6 @@
+{
+  "name": "Kino Plugin Studio - CineJoy",
+  "description": "Entorno de desarrollo, simulador interactivo de pantallas nativas y empaquetador del plugin CineJoy para la app Kino.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

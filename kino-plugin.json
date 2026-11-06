@@ -1,0 +1,74 @@
+{
+  "id": "cinejoy",
+  "name": "CineJoy",
+  "version": "1.0.0",
+  "apiVersion": 19,
+  "entry": "plugin.js",
+  "description": "Películas y series en alta calidad de Cinejoy, con portada y estrenos",
+  "author": "cinejoy",
+  "homepage": "https://cinejoy.pk",
+  "hosts": [
+    "api.themoviedb.org",
+    "image.tmdb.org",
+    "cinejoy.pk",
+    "cinejoy.to",
+    "api.wing.st",
+    "lists.wing.st"
+  ],
+  "streamHosts": "any",
+  "capabilities": [
+    "search",
+    "home",
+    "episodes",
+    "resolve",
+    "screen",
+    "download"
+  ],
+  "screen": {
+    "label": "CineJoy"
+  },
+  "color": "#95FF50",
+  "icon": "icon.png",
+  "settings": [
+    {
+      "key": "server",
+      "label": "Servidor preferido",
+      "type": "select",
+      "options": [
+        { "value": "auto", "label": "Automático (Mejor disponible)" },
+        { "value": "Lisbon", "label": "Lisbon (4K Ultra HD)" },
+        { "value": "secret", "label": "Secret (4K Ultra HD)" },
+        { "value": "Nebula", "label": "Nebula (1080p Full HD)" },
+        { "value": "Solara", "label": "Solara (1080p Rápido)" },
+        { "value": "Athens", "label": "Athens (Estable)" }
+      ],
+      "default": "auto",
+      "hint": "Servidor principal para reproducir películas y capítulos"
+    },
+    {
+      "key": "quality",
+      "label": "Calidad de video preferida",
+      "type": "select",
+      "options": [
+        { "value": "auto", "label": "Automática" },
+        { "value": "1080", "label": "1080p Full HD" },
+        { "value": "720", "label": "720p HD" },
+        { "value": "2160", "label": "4K Ultra HD" }
+      ],
+      "default": "auto",
+      "hint": "Resolución preferida al cargar el reproductor"
+    },
+    {
+      "key": "lang",
+      "label": "Idioma de subtítulos",
+      "type": "select",
+      "options": [
+        { "value": "es", "label": "Español (Latino / Castellano)" },
+        { "value": "en", "label": "Inglés" },
+        { "value": "none", "label": "Desactivados" }
+      ],
+      "default": "es",
+      "hint": "Selecciona el idioma preferido de subtítulos por defecto"
+    }
+  ]
+}
