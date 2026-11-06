@@ -360,6 +360,35 @@ export async function resolve(arg, options = {}) {
     "Origin": "https://brightpathsignals.com"
   };
 
+  const primary = streams[0];
+  const resolverAuthHeaderNames = ["referer", "origin", "cookie", "authorization"];
+  const hasResolverAuthHeaders = streams.some(stream => Object.keys(stream.headers)
+    .some(name => resolverAuthHeaderNames.includes(name.toLowerCase())));
+  const alternatives = streams.slice(1, 9).map((stream, idx) => {
+    const headers = { ...streamHeaders, ...stream.headers };
+    let label = stream.label || `Servidor alternativo ${idx + 1}`;
+
+    // Without source-provided credentials, try conservative header variants across the
+    // resolver's distinct URLs: keep Referer but omit Origin, then try User-Agent alone.
+    // This lets Kino's normal automatic alternative retry test the common 403 causes.
+    if (!hasResolverAuthHeaders) {
+      const suffix = idx === 0 ? " · sin Origin" : idx === 1 ? " · solo User-Agent" : "";
+      if (idx === 0) delete headers.Origin;
+      else if (idx === 1) {
+        delete headers.Origin;
+        delete headers.Referer;
+      }
+      if (suffix) label = `${label.slice(0, 48 - suffix.length)}${suffix}`;
+    }
+
+    return {
+      url: stream.url,
+      ...(stream.mime ? { mime: stream.mime } : {}),
+      label,
+      headers
+    };
+  });
+
   // Diagnostics for a device-side 403/connect failure: hostnames and header NAMES only,
   // never a signed URL, query token, title or header value.
   if (typeof kino !== "undefined" && typeof kino.log === "function") {
@@ -367,16 +396,9 @@ export async function resolve(arg, options = {}) {
     const headerNames = new Set(Object.keys(streamHeaders));
     for (const name of Object.keys(resolverHeaders)) headerNames.add(name);
     for (const stream of streams) for (const name of Object.keys(stream.headers)) headerNames.add(name);
-    kino.log(`CineJoy resolve: streams=${streams.length}; hosts=${hosts.join(",")}; headers=${[...headerNames].join(",")}`);
+    const fallback = hasResolverAuthHeaders ? "resolver-auth-headers" : "default,no-origin,user-agent-only";
+    kino.log(`CineJoy resolve: streams=${streams.length}; hosts=${hosts.join(",")}; headers=${[...headerNames].join(",")}; alternatives=${fallback}`);
   }
-
-  const primary = streams[0];
-  const alternatives = streams.slice(1, 9).map((stream, idx) => ({
-    url: stream.url,
-    ...(stream.mime ? { mime: stream.mime } : {}),
-    label: stream.label || `Servidor alternativo ${idx + 1}`,
-    headers: { ...streamHeaders, ...stream.headers }
-  }));
 
   return {
     url: primary.url,
