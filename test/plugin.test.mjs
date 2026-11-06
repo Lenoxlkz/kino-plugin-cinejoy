@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import * as plugin from "../plugin.js";
 
 const requestedUrls = [];
+const pluginLogs = [];
 const imdbByPath = {
   "/3/movie/550": "tt0137523",
   "/3/tv/1399": "tt0944947"
@@ -12,6 +13,7 @@ const imdbByPath = {
 // URL handling, not the uptime or availability of TMDB/CineJoy's production servers.
 globalThis.kino = {
   sleep: async () => {},
+  log: (...args) => pluginLogs.push(args.join(" ")),
   error: (code, message, extra = {}) => Object.assign(new Error(message), { code, ...extra }),
   fetch: async (input) => {
     const url = new URL(input);
@@ -65,13 +67,16 @@ globalThis.kino = {
     if (url.hostname === "streamdata.vaplayer.ru") {
       return jsonResponse({
         status_code: 200,
-        data: { stream_urls: [
-          "https://cdn.example.test/movie/master.m3u8?token=abc",
-          { url: "https://cdn.example.test/nebula/master.m3u8?token=def", server: "Nebula", headers: { "X-Playback-Key": "fixture-key" } },
-          { url: "https://cdn.example.test/movie/backup.mp4", server: "Backup node" },
-          "https://cdn.example.test/embed", // Must never reach ExoPlayer (HTML page, not media).
-          "javascript:alert(1)"
-        ] }
+        data: {
+          headers: { "X-Resolver-Session": "fixture-shared" },
+          stream_urls: [
+            "https://cdn.example.test/movie/master.m3u8?token=abc",
+            { url: "https://cdn.example.test/nebula/master.m3u8?token=def", server: "Nebula", headers: { "X-Playback-Key": "fixture-key" } },
+            { url: "https://cdn.example.test/movie/backup.mp4", server: "Backup node" },
+            "https://cdn.example.test/embed", // Must never reach ExoPlayer (HTML page, not media).
+            "javascript:alert(1)"
+          ]
+        }
       });
     }
     throw new Error(`Unexpected test URL: ${url.href}`);
@@ -135,6 +140,7 @@ describe("CineJoy Kino Plugin Tests", () => {
     assert.equal(Object.hasOwn(stream, "mime"), false);
     assert.equal(stream.headers.Referer, "https://brightpathsignals.com/");
     assert.equal(stream.headers.Origin, "https://brightpathsignals.com");
+    assert.equal(stream.headers["X-Resolver-Session"], "fixture-shared");
     assert.ok(stream.headers["User-Agent"]);
     assert.equal(stream.alternatives.length, 2);
     assert.equal(stream.alternatives[0].url, "https://cdn.example.test/nebula/master.m3u8?token=def");
@@ -142,6 +148,7 @@ describe("CineJoy Kino Plugin Tests", () => {
     assert.equal(Object.hasOwn(stream.alternatives[0], "mime"), false);
     assert.equal(stream.alternatives[0].label, "Nebula");
     assert.equal(stream.alternatives[0].headers["X-Playback-Key"], "fixture-key");
+    assert.equal(stream.alternatives[0].headers["X-Resolver-Session"], "fixture-shared");
     assert.equal(stream.alternatives[0].headers.Referer, stream.headers.Referer);
     assert.equal(stream.alternatives[0].headers.Origin, stream.headers.Origin);
     assert.equal(stream.alternatives[1].url, "https://cdn.example.test/movie/backup.mp4");
@@ -149,6 +156,10 @@ describe("CineJoy Kino Plugin Tests", () => {
     assert.equal(stream.alternatives[1].label, "Backup node");
     assert.ok(!stream.url.includes("embed"), "HTML embed pages must not be handed to ExoPlayer");
     assert.ok(requestedUrls.some(url => url.hostname === "streamdata.vaplayer.ru" && url.searchParams.get("imdb") === "tt0137523"));
+    const diag = pluginLogs.at(-1);
+    assert.ok(diag.includes("hosts=cdn.example.test"));
+    assert.ok(diag.includes("X-Resolver-Session") && diag.includes("X-Playback-Key"));
+    assert.ok(!diag.includes("token=") && !diag.includes("fixture-shared"), "diagnostics must not log URLs or header values");
   });
 
   test("resolve() requests the exact season and episode for a TV stream", async () => {

@@ -271,6 +271,7 @@ export async function resolve(arg, options = {}) {
 
   const fetchFn = typeof kino !== "undefined" && kino.fetch ? kino.fetch : globalThis.fetch;
   let streams = [];
+  let resolverHeaders = {};
 
   // Solo aceptamos recursos multimedia directos. Una página HTML de embed (o una respuesta
   // de error del resolvedor) no es reproducible por ExoPlayer aunque tenga una URL HTTPS.
@@ -300,7 +301,10 @@ export async function resolve(arg, options = {}) {
       // identifies the playlist from its URL and content (per the Stream contract).
       ...(isMp4 ? { mime: "video/mp4" } : {}),
       label: typeof item.label === "string" ? item.label : typeof item.server === "string" ? item.server : undefined,
-      headers: item.headers && typeof item.headers === "object" && !Array.isArray(item.headers) ? item.headers : {}
+      headers: {
+        ...resolverHeaders,
+        ...(item.headers && typeof item.headers === "object" && !Array.isArray(item.headers) ? item.headers : {})
+      }
     };
   };
 
@@ -322,6 +326,8 @@ export async function resolve(arg, options = {}) {
 
       if (res.ok) {
         const json = await res.json();
+        const rawHeaders = json?.data?.headers ?? json?.data?.stream_headers ?? json?.headers;
+        resolverHeaders = rawHeaders && typeof rawHeaders === "object" && !Array.isArray(rawHeaders) ? rawHeaders : {};
         const statusCode = String(json?.status_code ?? json?.status ?? "");
         const entries = json?.data?.stream_urls ?? json?.stream_urls;
         if ((statusCode === "200" || statusCode.toLowerCase() === "success") && Array.isArray(entries)) {
@@ -353,6 +359,16 @@ export async function resolve(arg, options = {}) {
     "Referer": "https://brightpathsignals.com/",
     "Origin": "https://brightpathsignals.com"
   };
+
+  // Diagnostics for a device-side 403/connect failure: hostnames and header NAMES only,
+  // never a signed URL, query token, title or header value.
+  if (typeof kino !== "undefined" && typeof kino.log === "function") {
+    const hosts = [...new Set(streams.map(stream => new URL(stream.url).hostname))];
+    const headerNames = new Set(Object.keys(streamHeaders));
+    for (const name of Object.keys(resolverHeaders)) headerNames.add(name);
+    for (const stream of streams) for (const name of Object.keys(stream.headers)) headerNames.add(name);
+    kino.log(`CineJoy resolve: streams=${streams.length}; hosts=${hosts.join(",")}; headers=${[...headerNames].join(",")}`);
+  }
 
   const primary = streams[0];
   const alternatives = streams.slice(1, 9).map((stream, idx) => ({
