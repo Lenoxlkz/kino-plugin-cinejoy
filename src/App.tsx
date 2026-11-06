@@ -256,49 +256,62 @@ export default function App() {
       const episode = parts[3] || '1';
       const isMovie = kind === 'movie';
 
-      const primaryStream = isMovie
-        ? `https://vidsrc.me/embed/movie?tmdb=${id}`
-        : `https://vidsrc.me/embed/tv?tmdb=${id}&season=${season}&episode=${episode}`;
-
-      const lisbon4k = isMovie
-        ? `https://vidlink.pro/movie/${id}`
-        : `https://vidlink.pro/tv/${id}/${season}/${episode}`;
-
-      const autoEmbed = isMovie
-        ? `https://autoembed.co/movie/tmdb/${id}`
-        : `https://autoembed.co/tv/tmdb/${id}/${season}/${episode}`;
-
-      const superEmbed = isMovie
-        ? `https://player.smashystream.com/movie/${id}`
-        : `https://player.smashystream.com/tv/${id}/${season}/${episode}`;
-
       let title = isMovie ? 'Película CineJoy' : `Serie T${season} E${episode}`;
       let imdbId = '';
       try {
         const TMDB_API_KEY = "8476a7ab80ad76f0936744df0430e67c";
-        const meta = await fetch(`https://api.themoviedb.org/3/${isMovie ? 'movie' : 'tv'}/${id}?api_key=${TMDB_API_KEY}&language=es-MX`).then(r => r.json());
+        const meta = await fetch(`https://api.themoviedb.org/3/${isMovie ? 'movie' : 'tv'}/${id}?api_key=${TMDB_API_KEY}&language=es-MX&append_to_response=external_ids`).then(r => r.json());
         if (meta) {
           title = meta.title || meta.name || title;
-          imdbId = meta.imdb_id || '';
+          if (!isMovie) title += ` - T${season}:E${episode}`;
+          imdbId = meta.external_ids?.imdb_id || meta.imdb_id || '';
         }
       } catch (err) {}
+
+      let streamUrls: string[] = [];
+      if (imdbId) {
+        try {
+          let apiEndpoint = `https://streamdata.vaplayer.ru/api.php?imdb=${imdbId}&type=${isMovie ? 'movie' : 'tv'}`;
+          if (!isMovie) apiEndpoint += `&season=${season}&episode=${episode}`;
+          const res = await fetch(apiEndpoint, {
+            headers: {
+              'Accept': 'application/json',
+              'User-Agent': 'CineJoy-Kino-Plugin/1.0'
+            }
+          });
+          if (res.ok) {
+            const json = await res.json();
+            if (json?.status_code === '200' && Array.isArray(json?.data?.stream_urls)) {
+              streamUrls = json.data.stream_urls.filter((u: any) => typeof u === 'string' && u.startsWith('http'));
+            }
+          }
+        } catch (err) {}
+      }
+
+      const streamHeaders = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Referer': 'https://brightpathsignals.com/',
+        'Origin': 'https://brightpathsignals.com'
+      };
+
+      const primaryStream = streamUrls[0] || (isMovie ? `https://cinejoy.pk/movie/${id}` : `https://cinejoy.pk/tv/${id}`);
+      const serverLabels = [
+        "Lisbon (4K / 1080p Ultra HD)",
+        "Nebula (1080p Directo)",
+        "Solara (Rápido)",
+        "Athens (Reserva)"
+      ];
 
       setResolvedStream({
         url: primaryStream,
         title,
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Referer': 'https://cinejoy.pk/'
-        },
-        subtitles: [
-          { lang: 'es', label: 'Español Latino', url: `https://subtitles.cinejoy.pk/sub/${imdbId || id}/es.vtt`, default: true },
-          { lang: 'en', label: 'English', url: `https://subtitles.cinejoy.pk/sub/${imdbId || id}/en.vtt` }
-        ],
-        alternatives: [
-          { label: 'Lisbon (4K Ultra HD)', url: lisbon4k },
-          { label: 'AutoEmbed (1080p HD)', url: autoEmbed },
-          { label: 'Smashy (1080p Rápido)', url: superEmbed }
-        ]
+        headers: streamHeaders,
+        subtitles: [],
+        alternatives: streamUrls.slice(1).map((u, idx) => ({
+          label: serverLabels[idx] || `Servidor ${idx + 2}`,
+          url: u,
+          headers: streamHeaders
+        }))
       });
     } catch (e) {
       console.error(e);
@@ -1191,7 +1204,9 @@ export default function App() {
                         "cinejoy.pk",
                         "cinejoy.to",
                         "api.wing.st",
-                        "lists.wing.st"
+                        "lists.wing.st",
+                        "streamdata.vaplayer.ru",
+                        "brightpathsignals.com"
                       ],
                       streamHosts: "any"
                     }, null, 2))}
@@ -1226,7 +1241,9 @@ export default function App() {
     "cinejoy.pk",
     "cinejoy.to",
     "api.wing.st",
-    "lists.wing.st"
+    "lists.wing.st",
+    "streamdata.vaplayer.ru",
+    "brightpathsignals.com"
   ],
   "streamHosts": "any"
 }`}

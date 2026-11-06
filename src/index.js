@@ -240,7 +240,7 @@ export async function episodes(arg) {
 }
 
 // ==========================================
-// 4. RESOLVE: Enlace reproducible en alta calidad
+// 4. RESOLVE: Enlace reproducible en alta calidad (HLS .m3u8 nativo para ExoPlayer)
 // ==========================================
 export async function resolve(arg, options = {}) {
   await (typeof kino !== "undefined" && typeof kino.sleep === "function" ? kino.sleep(1) : Promise.resolve());
@@ -257,74 +257,92 @@ export async function resolve(arg, options = {}) {
   const id = parts[1];
   const season = parts[2] || "1";
   const episode = parts[3] || "1";
+  const isMovie = kind === "movie";
 
-  // Consultar metadatos para obtener título exacto e IMDb ID
+  // Consultar metadatos en TMDB incluyendo external_ids para obtener IMDb ID
   let mediaTitle = "CineJoy Media";
   let imdbId = null;
 
   try {
-    const details = await tmdbFetch(`/${kind === "tv" ? "tv" : "movie"}/${id}`);
+    const details = await tmdbFetch(`/${isMovie ? "movie" : "tv"}/${id}`, {
+      append_to_response: "external_ids"
+    });
     if (details) {
       mediaTitle = details.title || details.name || "CineJoy Media";
-      imdbId = details.imdb_id || null;
+      if (!isMovie) {
+        mediaTitle += ` - T${season}:E${episode}`;
+      }
+      imdbId = details.external_ids?.imdb_id || details.imdb_id || null;
     }
   } catch (e) {
-    // Continuar con resolución
+    // Si falla TMDB, continuar
   }
 
-  // Fuentes principales
-  const isMovie = kind === "movie";
-  
-  const primaryStream = isMovie
-    ? `https://vidsrc.me/embed/movie?tmdb=${id}`
-    : `https://vidsrc.me/embed/tv?tmdb=${id}&season=${season}&episode=${episode}`;
+  const fetchFn = typeof kino !== "undefined" && kino.fetch ? kino.fetch : globalThis.fetch;
+  let streamUrls = [];
 
-  const lisbon4k = isMovie
-    ? `https://vidlink.pro/movie/${id}`
-    : `https://vidlink.pro/tv/${id}/${season}/${episode}`;
+  // 1. Obtener flujos HLS directos desde el resolvedor CDN de CineJoy
+  if (imdbId) {
+    try {
+      let apiEndpoint = `https://streamdata.vaplayer.ru/api.php?imdb=${imdbId}&type=${isMovie ? "movie" : "tv"}`;
+      if (!isMovie) {
+        apiEndpoint += `&season=${season}&episode=${episode}`;
+      }
 
-  const autoEmbed = isMovie
-    ? `https://autoembed.co/movie/tmdb/${id}`
-    : `https://autoembed.co/tv/tmdb/${id}/${season}/${episode}`;
+      const res = await fetchFn(apiEndpoint, {
+        headers: {
+          "Accept": "application/json",
+          "User-Agent": "CineJoy-Kino-Plugin/1.0"
+        }
+      });
 
-  const superEmbed = isMovie
-    ? `https://player.smashystream.com/movie/${id}`
-    : `https://player.smashystream.com/tv/${id}/${season}/${episode}`;
+      if (res.ok) {
+        const json = await res.json();
+        if (json?.status_code === "200" && Array.isArray(json?.data?.stream_urls)) {
+          streamUrls = json.data.stream_urls.filter(u => typeof u === "string" && u.startsWith("http"));
+        }
+      }
+    } catch (e) {
+      // Fallback
+    }
+  }
+
+  // 2. Si no hay streams directos encontrados
+  if (!streamUrls.length) {
+    throw (typeof kino !== "undefined" && kino.error)
+      ? kino.error("unavailable", "Servidores de video no disponibles", {
+          userMessage: `Los servidores de streaming de CineJoy no tienen señal activa en este momento para "${mediaTitle}". Por favor intenta con otra película o episodio.`
+        })
+      : new Error("No hay servidores de video disponibles");
+  }
+
+  // Cabeceras indispensables para que ExoPlayer en Android y TV no sea rechazado por el CDN
+  const streamHeaders = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Referer": "https://brightpathsignals.com/",
+    "Origin": "https://brightpathsignals.com"
+  };
+
+  const primaryStream = streamUrls[0];
+  const serverLabels = [
+    "Lisbon (4K / 1080p Ultra HD)",
+    "Nebula (1080p Directo)",
+    "Solara (Rápido)",
+    "Athens (Reserva)"
+  ];
+
+  const alternatives = streamUrls.slice(1).map((url, idx) => ({
+    url,
+    label: serverLabels[idx] || `Servidor ${idx + 2}`,
+    headers: streamHeaders
+  }));
 
   return {
     url: primaryStream,
     title: mediaTitle,
-    headers: {
-      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-      "Referer": "https://cinejoy.pk/"
-    },
-    alternatives: [
-      {
-        label: "Lisbon (4K Ultra HD)",
-        url: lisbon4k
-      },
-      {
-        label: "AutoEmbed (1080p HD)",
-        url: autoEmbed
-      },
-      {
-        label: "Smashy (1080p Rápido)",
-        url: superEmbed
-      }
-    ],
-    subtitles: [
-      {
-        lang: "es",
-        label: "Español Latino",
-        url: `https://subtitles.cinejoy.pk/sub/${imdbId || id}/es.vtt`,
-        default: true
-      },
-      {
-        lang: "en",
-        label: "English",
-        url: `https://subtitles.cinejoy.pk/sub/${imdbId || id}/en.vtt`
-      }
-    ]
+    headers: streamHeaders,
+    alternatives,
+    subtitles: []
   };
 }
 
