@@ -2,6 +2,85 @@ import { test, describe } from "node:test";
 import assert from "node:assert/strict";
 import * as plugin from "../plugin.js";
 
+const requestedUrls = [];
+const imdbByPath = {
+  "/3/movie/550": "tt0137523",
+  "/3/tv/1399": "tt0944947"
+};
+
+// Keep the suite deterministic and offline: these tests verify the plugin's contract and
+// URL handling, not the uptime or availability of TMDB/CineJoy's production servers.
+globalThis.kino = {
+  sleep: async () => {},
+  error: (code, message, extra = {}) => Object.assign(new Error(message), { code, ...extra }),
+  fetch: async (input) => {
+    const url = new URL(input);
+    requestedUrls.push(url);
+
+    if (url.hostname === "api.themoviedb.org") {
+      const results = [{
+        id: 550,
+        media_type: "movie",
+        title: "Fight Club",
+        name: "Fight Club",
+        release_date: "1999-10-15",
+        first_air_date: "1999-10-15",
+        poster_path: "/poster.jpg",
+        backdrop_path: "/backdrop.jpg",
+        overview: "A Matrix-like test fixture.",
+        vote_average: 8.4,
+        genre_ids: [28]
+      }];
+
+      if (url.pathname.endsWith("/season/1")) {
+        return jsonResponse({ episodes: [{
+          name: "Winter Is Coming", episode_number: 1, season_number: 1,
+          overview: "Pilot", air_date: "2011-04-17", still_path: "/still.jpg"
+        }] });
+      }
+      if (url.pathname === "/3/tv/1399") {
+        return jsonResponse({
+          name: "Game of Thrones",
+          external_ids: { imdb_id: imdbByPath[url.pathname] },
+          seasons: [{ season_number: 1, name: "Season 1" }]
+        });
+      }
+      if (url.pathname === "/3/movie/550") {
+        return jsonResponse({ title: "Fight Club", external_ids: { imdb_id: imdbByPath[url.pathname] } });
+      }
+      if (url.pathname.startsWith("/3/tv/1399/season/")) {
+        return jsonResponse({ episodes: [{
+          name: "Winter Is Coming", episode_number: 1, season_number: 1,
+          overview: "Pilot", air_date: "2011-04-17", still_path: "/still.jpg"
+        }] });
+      }
+      if (url.pathname.startsWith("/3/search/")) {
+        return jsonResponse({ results });
+      }
+      if (url.pathname.startsWith("/3/")) {
+        return jsonResponse({ results, seasons: [{ season_number: 1, name: "Season 1" }] });
+      }
+    }
+
+    if (url.hostname === "streamdata.vaplayer.ru") {
+      return jsonResponse({
+        status_code: 200,
+        data: { stream_urls: [
+          "https://cdn.example.test/movie/master.m3u8?token=abc",
+          { url: "https://cdn.example.test/movie/backup.mp4", server: "Backup node" },
+          "https://cdn.example.test/embed", // Must never reach ExoPlayer (HTML page, not media).
+          "javascript:alert(1)"
+        ] }
+      });
+    }
+    throw new Error(`Unexpected test URL: ${url.href}`);
+  }
+};
+
+function jsonResponse(body, status = 200) {
+  return { ok: status >= 200 && status < 300, status, json: async () => body };
+}
+
 describe("CineJoy Kino Plugin Tests", () => {
   test("Exported API functions exist", () => {
     assert.equal(typeof plugin.home, "function");
@@ -34,46 +113,61 @@ describe("CineJoy Kino Plugin Tests", () => {
     const results = await plugin.search({ q: "Matrix" });
     assert.ok(Array.isArray(results), "search() must return an array");
     assert.ok(results.length > 0, "search('Matrix') should return hits");
-    const hit = results[0];
-    assert.ok(hit.title.toLowerCase().includes("matrix") || hit.overview.toLowerCase().includes("matrix") || hit.id);
+    assert.ok(results[0].title.toLowerCase().includes("fight") || results[0].id);
   });
 
   test("episodes() returns seasons and episodes list for a series", async () => {
-    const res = await plugin.episodes("tv:1399"); // Game of Thrones
+    const res = await plugin.episodes("tv:1399");
     assert.ok(typeof res === "object" && res !== null, "episodes() must return an object");
     assert.ok(Array.isArray(res.episodes), "episodes property must be an array");
     assert.ok(res.episodes.length > 0, "Should have episodes");
-    const ep = res.episodes[0];
-    assert.ok(ep.season === 1, "Episode season should match");
-    assert.ok(ep.number === 1, "Episode number should match");
-    assert.ok(typeof ep.ref === "string", "Episode must have ref");
+    assert.equal(res.episodes[0].season, 1);
+    assert.equal(res.episodes[0].number, 1);
+    assert.equal(typeof res.episodes[0].ref, "string");
     assert.ok(Array.isArray(res.seasons), "seasons list must be an array");
   });
 
-  test("resolve() returns playable stream with alternatives", async () => {
-    const stream = await plugin.resolve("movie:550"); // Fight Club
-    assert.ok(stream.url, "resolve() must return a stream url");
-    assert.ok(stream.url.startsWith("https://"), "Stream URL must be https");
-    assert.ok(Array.isArray(stream.alternatives), "Alternatives should be an array");
-    assert.ok(stream.alternatives.length > 0, "Should have alternatives");
-    assert.ok(stream.headers, "Should have playback headers");
+  test("resolve() returns direct media URLs with required headers and alternatives", async () => {
+    const stream = await plugin.resolve("movie:550");
+    assert.equal(stream.url, "https://cdn.example.test/movie/master.m3u8?token=abc");
+    assert.equal(stream.mime, "application/vnd.apple.mpegurl");
+    assert.equal(stream.headers.Referer, "https://brightpathsignals.com/");
+    assert.equal(stream.headers.Origin, "https://brightpathsignals.com");
+    assert.ok(stream.headers["User-Agent"]);
+    assert.equal(stream.alternatives.length, 1);
+    assert.equal(stream.alternatives[0].url, "https://cdn.example.test/movie/backup.mp4");
+    assert.equal(stream.alternatives[0].mime, "video/mp4");
+    assert.equal(stream.alternatives[0].label, "Backup node");
+    assert.equal(stream.alternatives[0].headers.Referer, stream.headers.Referer);
+    assert.equal(stream.alternatives[0].headers.Origin, stream.headers.Origin);
+    assert.ok(!stream.url.includes("embed"), "HTML embed pages must not be handed to ExoPlayer");
+    assert.ok(requestedUrls.some(url => url.hostname === "streamdata.vaplayer.ru" && url.searchParams.get("imdb") === "tt0137523"));
+  });
+
+  test("resolve() requests the exact season and episode for a TV stream", async () => {
+    await plugin.resolve("tv:1399:3:7");
+    const request = requestedUrls.find(url => url.hostname === "streamdata.vaplayer.ru" && url.searchParams.get("imdb") === "tt0944947");
+    assert.ok(request, "TV stream resolver should be called with the canonical IMDb id");
+    assert.equal(request.searchParams.get("type"), "tv");
+    assert.equal(request.searchParams.get("season"), "3");
+    assert.equal(request.searchParams.get("episode"), "7");
   });
 
   test("screen() renders native Scaffold for mobile and TV with titleGrid", async () => {
     const mainScreen = await plugin.screen({});
     assert.equal(mainScreen.type.toLowerCase(), "scaffold");
-    assert.ok(mainScreen.appBar, "Must have an appBar");
-    assert.equal(mainScreen.appBar.mergeWithKinoBar, true, "AppBar should merge with Kino bar");
-    assert.equal(mainScreen.appBar.dense, true, "AppBar should be dense");
-    assert.equal(mainScreen.body.type, "titleGrid", "Body should be a native titleGrid with poster cards");
-    assert.ok(Array.isArray(mainScreen.body.items), "titleGrid should have items");
-    assert.ok(mainScreen.body.items.length > 0, "titleGrid should contain movies/series");
-    assert.ok(mainScreen.body.items[0].poster, "Items must have poster images");
+    assert.ok(mainScreen.appBar);
+    assert.equal(mainScreen.appBar.mergeWithKinoBar, true);
+    assert.equal(mainScreen.appBar.dense, true);
+    assert.equal(mainScreen.body.type, "titleGrid");
+    assert.ok(Array.isArray(mainScreen.body.items));
+    assert.ok(mainScreen.body.items.length > 0);
+    assert.ok(mainScreen.body.items[0].poster);
   });
 
   test("screenEvent() handles tab switching and returns state", async () => {
     const eventRes = await plugin.screenEvent({ name: "changeTab", arg: "movies" });
-    assert.ok(eventRes, "screenEvent should return an answer");
-    assert.deepEqual(eventRes.state, { tab: "movies" }, "screenEvent should return updated state with the new tab");
+    assert.ok(eventRes);
+    assert.deepEqual(eventRes.state, { tab: "movies" });
   });
 });
