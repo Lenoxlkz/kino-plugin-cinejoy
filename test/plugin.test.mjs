@@ -67,7 +67,7 @@ globalThis.kino = {
         status_code: 200,
         data: { stream_urls: [
           "https://cdn.example.test/movie/master.m3u8?token=abc",
-          { url: "https://cdn.example.test/movie/backup.mp4", server: "Backup node" },
+          { url: "https://cdn.example.test/movie/backup.mp4", server: "Backup node", headers: { "X-Playback-Key": "fixture-key" } },
           "https://cdn.example.test/embed", // Must never reach ExoPlayer (HTML page, not media).
           "javascript:alert(1)"
         ] }
@@ -130,7 +130,7 @@ describe("CineJoy Kino Plugin Tests", () => {
   test("resolve() returns direct media URLs with required headers and alternatives", async () => {
     const stream = await plugin.resolve("movie:550");
     assert.equal(stream.url, "https://cdn.example.test/movie/master.m3u8?token=abc");
-    assert.equal(stream.mime, "application/vnd.apple.mpegurl");
+    assert.equal(stream.mime, "application/x-mpegURL");
     assert.equal(stream.headers.Referer, "https://brightpathsignals.com/");
     assert.equal(stream.headers.Origin, "https://brightpathsignals.com");
     assert.ok(stream.headers["User-Agent"]);
@@ -138,6 +138,7 @@ describe("CineJoy Kino Plugin Tests", () => {
     assert.equal(stream.alternatives[0].url, "https://cdn.example.test/movie/backup.mp4");
     assert.equal(stream.alternatives[0].mime, "video/mp4");
     assert.equal(stream.alternatives[0].label, "Backup node");
+    assert.equal(stream.alternatives[0].headers["X-Playback-Key"], "fixture-key");
     assert.equal(stream.alternatives[0].headers.Referer, stream.headers.Referer);
     assert.equal(stream.alternatives[0].headers.Origin, stream.headers.Origin);
     assert.ok(!stream.url.includes("embed"), "HTML embed pages must not be handed to ExoPlayer");
