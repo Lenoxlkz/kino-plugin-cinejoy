@@ -296,8 +296,11 @@ export async function resolve(arg, options = {}) {
 
     return {
       url,
-      mime: isHls ? "application/vnd.apple.mpegurl" : "video/mp4",
-      label: typeof item.label === "string" ? item.label : typeof item.server === "string" ? item.server : undefined
+      // Media3 / ExoPlayer's canonical HLS MIME. The vendor alias is valid too, but the
+      // canonical value avoids older player builds treating an HLS URL as progressive media.
+      mime: isHls ? "application/x-mpegURL" : "video/mp4",
+      label: typeof item.label === "string" ? item.label : typeof item.server === "string" ? item.server : undefined,
+      headers: item.headers && typeof item.headers === "object" && !Array.isArray(item.headers) ? item.headers : {}
     };
   };
 
@@ -356,7 +359,7 @@ export async function resolve(arg, options = {}) {
     url: stream.url,
     mime: stream.mime,
     label: stream.label || `Servidor alternativo ${idx + 1}`,
-    headers: streamHeaders
+    headers: { ...streamHeaders, ...stream.headers }
   }));
 
   return {
@@ -364,7 +367,7 @@ export async function resolve(arg, options = {}) {
     mime: primary.mime,
     label: primary.label || "Servidor principal",
     title: mediaTitle,
-    headers: streamHeaders,
+    headers: { ...streamHeaders, ...primary.headers },
     alternatives,
     subtitles: []
   };

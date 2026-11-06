@@ -215,8 +215,11 @@ async function resolve(arg, options = {}) {
     if (!isHls && !isMp4) return null;
     return {
       url,
-      mime: isHls ? "application/vnd.apple.mpegurl" : "video/mp4",
-      label: typeof item.label === "string" ? item.label : typeof item.server === "string" ? item.server : void 0
+      // Media3 / ExoPlayer's canonical HLS MIME. The vendor alias is valid too, but the
+      // canonical value avoids older player builds treating an HLS URL as progressive media.
+      mime: isHls ? "application/x-mpegURL" : "video/mp4",
+      label: typeof item.label === "string" ? item.label : typeof item.server === "string" ? item.server : void 0,
+      headers: item.headers && typeof item.headers === "object" && !Array.isArray(item.headers) ? item.headers : {}
     };
   };
   if (imdbId) {
@@ -264,14 +267,14 @@ async function resolve(arg, options = {}) {
     url: stream.url,
     mime: stream.mime,
     label: stream.label || `Servidor alternativo ${idx + 1}`,
-    headers: streamHeaders
+    headers: { ...streamHeaders, ...stream.headers }
   }));
   return {
     url: primary.url,
     mime: primary.mime,
     label: primary.label || "Servidor principal",
     title: mediaTitle,
-    headers: streamHeaders,
+    headers: { ...streamHeaders, ...primary.headers },
     alternatives,
     subtitles: []
   };
