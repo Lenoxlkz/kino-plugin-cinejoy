@@ -137,8 +137,7 @@ export default function App() {
           poster: i.poster_path ? `https://image.tmdb.org/t/p/w500${i.poster_path}` : undefined,
           backdrop: i.backdrop_path ? `https://image.tmdb.org/t/p/w1280${i.backdrop_path}` : undefined,
           overview: i.overview || '',
-          rating: i.vote_average ? Math.round(i.vote_average * 10) / 10 : undefined,
-          open: { screen: { args: { ref: `${kind}:${i.id}` } } }
+          rating: i.vote_average ? Math.round(i.vote_average * 10) / 10 : undefined
         };
       };
 
@@ -191,8 +190,7 @@ export default function App() {
           poster: i.poster_path ? `https://image.tmdb.org/t/p/w500${i.poster_path}` : undefined,
           backdrop: i.backdrop_path ? `https://image.tmdb.org/t/p/w1280${i.backdrop_path}` : undefined,
           overview: i.overview || '',
-          rating: i.vote_average ? Math.round(i.vote_average * 10) / 10 : undefined,
-          open: { screen: { args: { ref: `${i.media_type}:${i.id}` } } }
+          rating: i.vote_average ? Math.round(i.vote_average * 10) / 10 : undefined
         }));
       setSearchResults(hits);
     } catch (e) {

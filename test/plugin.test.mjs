@@ -59,20 +59,21 @@ describe("CineJoy Kino Plugin Tests", () => {
     assert.ok(stream.headers, "Should have playback headers");
   });
 
-  test("screen() renders native Scaffold for mobile and TV", async () => {
+  test("screen() renders native Scaffold for mobile and TV with titleGrid", async () => {
     const mainScreen = await plugin.screen({});
-    assert.equal(mainScreen.type, "Scaffold");
+    assert.equal(mainScreen.type.toLowerCase(), "scaffold");
     assert.ok(mainScreen.appBar, "Must have an appBar");
     assert.equal(mainScreen.appBar.mergeWithKinoBar, true, "AppBar should merge with Kino bar");
     assert.equal(mainScreen.appBar.dense, true, "AppBar should be dense");
-
-    const detailScreen = await plugin.screen({ args: { ref: "movie:550" } });
-    assert.equal(detailScreen.type, "Scaffold");
-    assert.ok(detailScreen.body, "Detail screen must have a body");
+    assert.equal(mainScreen.body.type, "titleGrid", "Body should be a native titleGrid with poster cards");
+    assert.ok(Array.isArray(mainScreen.body.items), "titleGrid should have items");
+    assert.ok(mainScreen.body.items.length > 0, "titleGrid should contain movies/series");
+    assert.ok(mainScreen.body.items[0].poster, "Items must have poster images");
   });
 
-  test("screenEvent() handles tab switching and search triggers", async () => {
+  test("screenEvent() handles tab switching and returns state", async () => {
     const eventRes = await plugin.screenEvent({ name: "changeTab", arg: "movies" });
-    assert.ok(eventRes, "screenEvent should return an action or screen");
+    assert.ok(eventRes, "screenEvent should return an answer");
+    assert.deepEqual(eventRes.state, { tab: "movies" }, "screenEvent should return updated state with the new tab");
   });
 });

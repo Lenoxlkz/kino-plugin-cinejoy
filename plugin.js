@@ -61,12 +61,7 @@ function formatKinoItem(item, forcedKind) {
     overview: item.overview || "",
     rating: item.vote_average ? Math.round(item.vote_average * 10) / 10 : void 0,
     genres,
-    ids: { tmdb: id },
-    open: {
-      screen: {
-        args: { ref }
-      }
-    }
+    ids: { tmdb: id }
   };
 }
 async function home() {
@@ -234,278 +229,64 @@ async function resolve(arg, options = {}) {
     ]
   };
 }
-async function screen(params = {}) {
+async function screen(context = {}) {
   await (typeof kino !== "undefined" && typeof kino.sleep === "function" ? kino.sleep(1) : Promise.resolve());
-  const args = params.args || params.query || {};
-  const currentTab = args.tab || "trending";
-  if (args.ref) {
-    return await renderDetailScreen(args.ref);
-  }
+  const currentTab = context?.state?.tab || context?.args?.tab || "trending";
   let items = [];
   if (currentTab === "movies") {
     const data = await tmdbFetch("/movie/popular");
-    items = data?.results?.slice(0, 18).map((i) => formatKinoItem(i, "movie")) || [];
+    items = data?.results?.slice(0, 30).map((i) => formatKinoItem(i, "movie")) || [];
   } else if (currentTab === "series") {
     const data = await tmdbFetch("/tv/popular");
-    items = data?.results?.slice(0, 18).map((i) => formatKinoItem(i, "series")) || [];
+    items = data?.results?.slice(0, 30).map((i) => formatKinoItem(i, "series")) || [];
   } else if (currentTab === "action") {
     const data = await tmdbFetch("/discover/movie", { with_genres: "28" });
-    items = data?.results?.slice(0, 18).map((i) => formatKinoItem(i, "movie")) || [];
+    items = data?.results?.slice(0, 30).map((i) => formatKinoItem(i, "movie")) || [];
   } else {
     const data = await tmdbFetch("/trending/all/day");
-    items = data?.results?.slice(0, 18).map((i) => formatKinoItem(i)) || [];
+    items = data?.results?.slice(0, 30).map((i) => formatKinoItem(i)) || [];
   }
-  const gridChildren = items.map((item) => ({
-    type: "Card",
-    variant: "outlined",
-    onTap: {
-      event: "openDetail",
-      arg: item.ref
-    },
-    children: [
-      {
-        type: "Column",
-        children: [
-          {
-            type: "Image",
-            src: item.poster || "https://cinejoy.pk/meta.png",
-            fit: "cover",
-            height: 180,
-            radius: 8
-          },
-          {
-            type: "Text",
-            text: item.title,
-            style: "label",
-            weight: "bold",
-            maxLines: 1,
-            canRequestFocus: true
-          },
-          {
-            type: "Row",
-            justify: "spaceBetween",
-            children: [
-              {
-                type: "Text",
-                text: item.year ? String(item.year) : "",
-                style: "caption"
-              },
-              {
-                type: "Text",
-                text: item.rating ? `\u2605 ${item.rating}` : "",
-                style: "caption",
-                weight: "bold"
-              }
-            ]
-          }
-        ]
-      }
-    ]
-  }));
   return {
-    type: "Scaffold",
+    type: "scaffold",
     appBar: {
-      type: "AppBar",
+      type: "appBar",
       title: "CineJoy",
       mergeWithKinoBar: true,
       dense: true,
       leading: {
-        type: "IconButton",
+        type: "button",
+        variant: "icon",
         icon: "close",
-        labelText: "Cerrar",
-        onPressed: {
+        label: "Cerrar",
+        onTap: {
           go: { close: true }
         }
       },
       bottom: {
-        type: "TabBar",
-        active: currentTab,
-        onChange: { event: "changeTab" },
+        type: "tabs",
         tabs: [
           { label: "Tendencias", value: "trending" },
           { label: "Pel\xEDculas", value: "movies" },
           { label: "Series TV", value: "series" },
           { label: "Acci\xF3n", value: "action" }
-        ]
+        ],
+        value: currentTab,
+        onChange: { event: "changeTab" }
       }
     },
     body: {
-      type: "SingleChildScrollView",
-      children: [
-        {
-          type: "Column",
-          children: [
-            // Banner de bienvenida estilo Card
-            {
-              type: "Card",
-              variant: "filled",
-              children: [
-                {
-                  type: "Row",
-                  align: "center",
-                  children: [
-                    {
-                      type: "Icon",
-                      icon: "play_circle_filled",
-                      size: 32
-                    },
-                    {
-                      type: "Column",
-                      children: [
-                        {
-                          type: "Text",
-                          text: "CineJoy: Pel\xEDculas y Series en Streaming",
-                          style: "h4",
-                          weight: "bold",
-                          canRequestFocus: true
-                        },
-                        {
-                          type: "Text",
-                          text: "Explora estrenos, series completas y pel\xEDculas con subt\xEDtulos en espa\xF1ol.",
-                          style: "caption",
-                          canRequestFocus: true
-                        }
-                      ]
-                    }
-                  ]
-                }
-              ]
-            },
-            // Rejilla de contenido
-            {
-              type: "GridView",
-              columns: 3,
-              children: gridChildren
-            }
-          ]
-        }
-      ]
+      type: "titleGrid",
+      items
     }
   };
 }
-async function renderDetailScreen(ref) {
-  const parts = ref.split(":");
-  const kind = parts[0];
-  const id = parts[1];
-  const data = await tmdbFetch(`/${kind === "tv" ? "tv" : "movie"}/${id}`);
-  if (!data) {
-    return {
-      type: "Scaffold",
-      appBar: {
-        type: "AppBar",
-        title: "No encontrado",
-        mergeWithKinoBar: true,
-        dense: true,
-        leading: {
-          type: "IconButton",
-          icon: "arrow_back",
-          labelText: "Atr\xE1s",
-          onPressed: { event: "backToMain" }
-        }
-      },
-      body: {
-        type: "Text",
-        text: "El t\xEDtulo solicitado no est\xE1 disponible.",
-        style: "p"
-      }
-    };
-  }
-  const title = data.title || data.name || "Detalle";
-  const year = (data.release_date || data.first_air_date || "").slice(0, 4);
-  const rating = data.vote_average ? `${Math.round(data.vote_average * 10) / 10}` : "";
-  const overview = data.overview || "Sin sinopsis disponible.";
-  const backdrop = data.backdrop_path ? `${TMDB_BACKDROP_BASE}${data.backdrop_path}` : void 0;
-  return {
-    type: "Scaffold",
-    appBar: {
-      type: "AppBar",
-      title,
-      mergeWithKinoBar: true,
-      dense: true,
-      leading: {
-        type: "IconButton",
-        icon: "arrow_back",
-        labelText: "Volver",
-        onPressed: {
-          event: "backToMain"
-        }
-      }
-    },
-    body: {
-      type: "SingleChildScrollView",
-      children: [
-        {
-          type: "Column",
-          children: [
-            ifPresent(backdrop, {
-              type: "Image",
-              src: backdrop,
-              fit: "cover",
-              height: 200,
-              radius: 12
-            }),
-            {
-              type: "Row",
-              justify: "spaceBetween",
-              align: "center",
-              children: [
-                {
-                  type: "Text",
-                  text: `${title} (${year})`,
-                  style: "h3",
-                  weight: "bold",
-                  canRequestFocus: true
-                },
-                {
-                  type: "Badge",
-                  label: `\u2605 ${rating}`
-                }
-              ]
-            },
-            {
-              type: "Button",
-              label: "Reproducir ahora en CineJoy",
-              variant: "primary",
-              onPressed: {
-                go: {
-                  play: { id: ref.replace(/:/g, "_") }
-                }
-              }
-            },
-            {
-              type: "Text",
-              text: overview,
-              style: "p",
-              canRequestFocus: true
-            }
-          ].filter(Boolean)
-        }
-      ]
-    }
-  };
-}
-function ifPresent(cond, val) {
-  return cond ? val : void 0;
-}
-async function screenEvent({ event, data }) {
+async function screenEvent(event) {
   await (typeof kino !== "undefined" && typeof kino.sleep === "function" ? kino.sleep(1) : Promise.resolve());
-  if (event === "changeTab") {
-    const newTab = data?.value || "trending";
-    const newScreen = await screen({ args: { tab: newTab } });
+  const name = event?.name || (typeof event === "string" ? event : "");
+  if (name === "changeTab") {
+    const tab = event?.value || event?.arg || "trending";
     return {
-      update: newScreen
-    };
-  }
-  if (event === "openDetail") {
-    const detailScreen = await renderDetailScreen(data?.ref);
-    return {
-      push: detailScreen
-    };
-  }
-  if (event === "backToMain") {
-    const mainScreen = await screen({ args: { tab: "trending" } });
-    return {
-      update: mainScreen
+      state: { tab }
     };
   }
   return {};
