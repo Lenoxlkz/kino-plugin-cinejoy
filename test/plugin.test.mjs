@@ -139,20 +139,21 @@ describe("CineJoy Kino Plugin Tests", () => {
     assert.equal(stream.url, "https://cdn.example.test/movie/master.m3u8?token=abc");
     assert.equal(stream.mime, undefined, "HLS must omit mime; Kino detects it from the playlist URL/content");
     assert.equal(Object.hasOwn(stream, "mime"), false);
-    assert.equal(stream.headers.Referer, "https://brightpathsignals.com/");
-    assert.equal(stream.headers.Origin, "https://brightpathsignals.com");
     assert.ok(stream.headers["User-Agent"]);
+    assert.equal("Referer" in stream.headers, false, "the working default must omit Referer");
+    assert.equal("Origin" in stream.headers, false, "the working default must omit Origin");
     assert.equal(stream.alternatives.length, 2);
     assert.equal(stream.alternatives[0].url, "https://cdn.example.test/nebula/master.m3u8?token=def");
     assert.equal(stream.alternatives[0].mime, undefined, "HLS alternatives must also omit mime");
     assert.equal(Object.hasOwn(stream.alternatives[0], "mime"), false);
-    assert.equal(stream.alternatives[0].label, "Nebula · sin Origin");
+    assert.equal(stream.alternatives[0].label, "Nebula");
     assert.equal(stream.alternatives[0].headers["X-Playback-Key"], "fixture-key");
-    assert.equal(stream.alternatives[0].headers.Referer, stream.headers.Referer);
+    assert.equal(stream.alternatives[0].headers["User-Agent"], stream.headers["User-Agent"]);
+    assert.equal("Referer" in stream.alternatives[0].headers, false);
     assert.equal("Origin" in stream.alternatives[0].headers, false);
     assert.equal(stream.alternatives[1].url, "https://cdn.example.test/movie/backup.mp4");
     assert.equal(stream.alternatives[1].mime, "video/mp4");
-    assert.equal(stream.alternatives[1].label, "Backup node · solo User-Agent");
+    assert.equal(stream.alternatives[1].label, "Backup node");
     assert.equal(stream.alternatives[1].headers["User-Agent"], stream.headers["User-Agent"]);
     assert.equal("Origin" in stream.alternatives[1].headers, false);
     assert.equal("Referer" in stream.alternatives[1].headers, false);
@@ -161,7 +162,7 @@ describe("CineJoy Kino Plugin Tests", () => {
     const diag = pluginLogs.at(-1);
     assert.ok(diag.includes("hosts=cdn.example.test"));
     assert.ok(diag.includes("X-Playback-Key"));
-    assert.ok(diag.includes("alternatives=default,no-origin,user-agent-only"));
+    assert.ok(diag.includes("alternatives=user-agent+resolver-headers"));
     assert.ok(!diag.includes("token=") && !diag.includes("fixture-key"), "diagnostics must not log URLs or header values");
   });
 
@@ -175,7 +176,7 @@ describe("CineJoy Kino Plugin Tests", () => {
       assert.equal(stream.alternatives[0].headers.Referer, "https://resolver.example/");
       assert.equal(stream.alternatives[0].headers.Origin, "https://resolver.example");
       assert.equal(stream.alternatives[0].label, "Nebula");
-      assert.ok(pluginLogs.at(-1).includes("alternatives=resolver-auth-headers"));
+      assert.ok(pluginLogs.at(-1).includes("alternatives=user-agent+resolver-headers"));
     } finally {
       resolverHeadersFixture = previousHeaders;
     }
