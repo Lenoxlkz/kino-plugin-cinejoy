@@ -5,6 +5,7 @@ import * as plugin from "../plugin.js";
 const requestedUrls = [];
 const pluginLogs = [];
 let resolverHeadersFixture = null;
+let resolverRepliesFixture = [];
 const imdbByPath = {
   "/3/movie/550": "tt0137523",
   "/3/tv/1399": "tt0944947"
@@ -66,6 +67,7 @@ globalThis.kino = {
     }
 
     if (url.hostname === "streamdata.vaplayer.ru") {
+      if (resolverRepliesFixture.length) return resolverRepliesFixture.shift();
       return jsonResponse({
         status_code: 200,
         data: {
@@ -179,6 +181,21 @@ describe("CineJoy Kino Plugin Tests", () => {
       assert.ok(pluginLogs.at(-1).includes("alternatives=user-agent+resolver-headers"));
     } finally {
       resolverHeadersFixture = previousHeaders;
+    }
+  });
+
+  test("resolve() retries once when the resolver transiently returns no stream URLs", async () => {
+    const previousReplies = resolverRepliesFixture;
+    const before = requestedUrls.filter(url => url.hostname === "streamdata.vaplayer.ru").length;
+    resolverRepliesFixture = [jsonResponse({ status_code: 200, data: { stream_urls: [] } })];
+    try {
+      const stream = await plugin.resolve("movie:550");
+      assert.ok(stream.url, "the second resolver response should supply a playable candidate");
+      const after = requestedUrls.filter(url => url.hostname === "streamdata.vaplayer.ru").length;
+      assert.equal(after - before, 2, "one empty response should trigger exactly one retry");
+      assert.ok(pluginLogs.some(line => line.includes("CineJoy resolver: attempt=1;") && line.includes("raw=0; direct=0")));
+    } finally {
+      resolverRepliesFixture = previousReplies;
     }
   });
 

@@ -226,37 +226,54 @@ async function resolve(arg, options = {}) {
       }
     };
   };
+  const resolverLog = (...args) => {
+    if (typeof kino !== "undefined" && typeof kino.log === "function") kino.log(...args);
+  };
   if (imdbId) {
-    try {
-      const params = new URLSearchParams({ imdb: imdbId, type: isMovie ? "movie" : "tv" });
-      if (!isMovie) {
-        params.set("season", season);
-        params.set("episode", episode);
-      }
-      const apiEndpoint = `https://streamdata.vaplayer.ru/api.php?${params.toString()}`;
-      const res = await fetchFn(apiEndpoint, {
-        headers: {
-          "Accept": "application/json",
-          "User-Agent": "CineJoy-Kino-Plugin/1.0"
-        }
-      });
-      if (res.ok) {
-        const json = await res.json();
-        const rawHeaders = json?.data?.headers ?? json?.data?.stream_headers ?? json?.headers;
-        resolverHeaders = rawHeaders && typeof rawHeaders === "object" && !Array.isArray(rawHeaders) ? rawHeaders : {};
-        const statusCode = String(json?.status_code ?? json?.status ?? "");
-        const entries = json?.data?.stream_urls ?? json?.stream_urls;
-        if ((statusCode === "200" || statusCode.toLowerCase() === "success") && Array.isArray(entries)) {
-          const seen = /* @__PURE__ */ new Set();
-          streams = entries.map(parseDirectStream).filter((stream) => {
-            if (!stream || seen.has(stream.url)) return false;
-            seen.add(stream.url);
-            return true;
-          }).slice(0, 9);
-        }
-      }
-    } catch (e) {
+    const params = new URLSearchParams({ imdb: imdbId, type: isMovie ? "movie" : "tv" });
+    if (!isMovie) {
+      params.set("season", season);
+      params.set("episode", episode);
     }
+    const apiEndpoint = `https://streamdata.vaplayer.ru/api.php?${params.toString()}`;
+    for (let attempt = 1; attempt <= 2 && !streams.length; attempt++) {
+      resolverHeaders = {};
+      try {
+        const res = await fetchFn(apiEndpoint, {
+          headers: {
+            "Accept": "application/json",
+            "User-Agent": "CineJoy-Kino-Plugin/1.0"
+          }
+        });
+        if (res.ok) {
+          const json = await res.json();
+          const rawHeaders = json?.data?.headers ?? json?.data?.stream_headers ?? json?.headers;
+          resolverHeaders = rawHeaders && typeof rawHeaders === "object" && !Array.isArray(rawHeaders) ? rawHeaders : {};
+          const statusCode = String(json?.status_code ?? json?.status ?? "");
+          const entries = json?.data?.stream_urls ?? json?.stream_urls;
+          const rawCount = Array.isArray(entries) ? entries.length : 0;
+          if ((statusCode === "200" || statusCode.toLowerCase() === "success") && Array.isArray(entries)) {
+            const seen = /* @__PURE__ */ new Set();
+            streams = entries.map(parseDirectStream).filter((stream) => {
+              if (!stream || seen.has(stream.url)) return false;
+              seen.add(stream.url);
+              return true;
+            }).slice(0, 9);
+          }
+          resolverLog(`CineJoy resolver: attempt=${attempt}; http=${res.status}; api_status=${statusCode || "missing"}; raw=${rawCount}; direct=${streams.length}`);
+        } else {
+          resolverLog(`CineJoy resolver: attempt=${attempt}; http=${res.status}; direct=0`);
+        }
+      } catch (e) {
+        const code = typeof e?.code === "string" && /^[A-Za-z0-9_-]{1,32}$/.test(e.code) ? e.code : "request_failed";
+        resolverLog(`CineJoy resolver: attempt=${attempt}; network=${code}; direct=0`);
+      }
+      if (!streams.length && attempt === 1) {
+        await (typeof kino !== "undefined" && typeof kino.sleep === "function" ? kino.sleep(250) : Promise.resolve());
+      }
+    }
+  } else {
+    resolverLog("CineJoy resolver: skipped; reason=no_imdb_id");
   }
   if (!streams.length) {
     throw typeof kino !== "undefined" && kino.error ? kino.error("unavailable", "Servidores de video no disponibles", {
@@ -280,7 +297,7 @@ async function resolve(arg, options = {}) {
     for (const name of Object.keys(resolverHeaders)) headerNames.add(name);
     for (const stream of streams) for (const name of Object.keys(stream.headers)) headerNames.add(name);
     const fallback = hasResolverHeaders ? "user-agent+resolver-headers" : "user-agent-only";
-    kino.log(`CineJoy resolve: streams=${streams.length}; hosts=${hosts.join(",")}; headers=${[...headerNames].join(",")}; alternatives=${fallback}`);
+    kino.log(`CineJoy resolve: streams=${streams.length}; distinct_hosts=${hosts.length}; hosts=${hosts.join(",")}; headers=${[...headerNames].join(",")}; alternatives=${fallback}`);
   }
   return {
     url: primary.url,
